@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Calendar, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Settings, LogOut, ScrollText } from "lucide-react";
 import { motion } from "framer-motion";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/candidats", label: "Candidats", icon: Users },
   { href: "/reservations", label: "Réservations", icon: Calendar },
+  { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/parametres", label: "Paramètres", icon: Settings },
 ];
 
