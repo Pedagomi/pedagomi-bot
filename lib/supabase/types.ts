@@ -22,9 +22,11 @@ export type MandateStatus = "pending" | "processing" | "success" | "error";
 export interface MandateRequest {
   id: string;
   neph: string;
-  date_naissance: string; // YYYY-MM-DD
-  nom: string | null;
+  nom: string;
   prenom: string | null;
+  groupe_permis: string; // "A" | "B"
+  email: string | null;
+  date_naissance: string | null;
   status: MandateStatus;
   error_message: string | null;
   candidat_id_plateforme: string | null;

@@ -16,9 +16,10 @@ interface Props {
 }
 
 export function MandateTakerModal({ onClose }: Props) {
-  const [neph, setNeph] = useState("");
-  const [dob, setDob] = useState("");
   const [nom, setNom] = useState("");
+  const [neph, setNeph] = useState("");
+  const [groupe, setGroupe] = useState<"A" | "B">("B");
+  const [email, setEmail] = useState("");
   const [prenom, setPrenom] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<MandateRequest[]>([]);
@@ -56,21 +57,22 @@ export function MandateTakerModal({ onClose }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!/^\d{10,14}$/.test(neph.trim())) {
-      toast.error("NEPH invalide (10 à 14 chiffres)");
+    if (!nom.trim()) {
+      toast.error("Nom obligatoire");
       return;
     }
-    if (!dob) {
-      toast.error("Date de naissance requise");
+    if (!/^\d{9,14}([- ]?\d{3})?$/.test(neph.trim().replace(/\s/g, ""))) {
+      toast.error("NEPH invalide");
       return;
     }
     setSubmitting(true);
     const supabase = createClient();
     const { error } = await supabase.from("mandate_requests").insert({
-      neph: neph.trim(),
-      date_naissance: dob,
-      nom: nom.trim() || null,
+      nom: nom.trim().toUpperCase(),
       prenom: prenom.trim() || null,
+      neph: neph.trim(),
+      groupe_permis: groupe,
+      email: email.trim() || null,
       status: "pending",
     });
     setSubmitting(false);
@@ -79,10 +81,10 @@ export function MandateTakerModal({ onClose }: Props) {
       return;
     }
     toast.success("Demande envoyée — le worker prend l'élève sous mandat");
-    setNeph("");
-    setDob("");
     setNom("");
     setPrenom("");
+    setNeph("");
+    setEmail("");
   }
 
   async function retry(req: MandateRequest) {
@@ -113,8 +115,8 @@ export function MandateTakerModal({ onClose }: Props) {
         <div className="p-6 border-b border-border/60">
           <h2 className="text-xl font-bold">Prendre un élève sous mandat</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Saisis le NEPH et la date de naissance. Le bot appelle RdvPermis pour créer le mandat,
-            puis l'élève apparaît dans ta liste "Ajouter un candidat".
+            Saisis le nom et le NEPH. Le bot appelle RdvPermis pour créer le mandat.
+            Une fois réussi, l'élève apparaît automatiquement dans "Ajouter un candidat".
           </p>
         </div>
 
@@ -122,48 +124,63 @@ export function MandateTakerModal({ onClose }: Props) {
           <form onSubmit={submit} className="p-6 space-y-4 border-b border-border/50">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="neph">NEPH *</Label>
+                <Label htmlFor="nom">Nom de famille *</Label>
                 <Input
-                  id="neph"
-                  value={neph}
-                  onChange={(e) => setNeph(e.target.value.replace(/\s/g, ""))}
-                  placeholder="12 chiffres"
-                  inputMode="numeric"
+                  id="nom"
+                  value={nom}
+                  onChange={(e) => setNom(e.target.value)}
+                  placeholder="DUPONT"
                   required
-                  className="mt-1.5 font-mono"
+                  className="mt-1.5 uppercase"
                 />
               </div>
-              <div>
-                <Label htmlFor="dob">Date de naissance *</Label>
-                <Input
-                  id="dob"
-                  type="date"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  required
-                  className="mt-1.5"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="prenom">Prénom (optionnel)</Label>
                 <Input
                   id="prenom"
                   value={prenom}
                   onChange={(e) => setPrenom(e.target.value)}
+                  placeholder="Utilisé uniquement pour l'affichage"
                   className="mt-1.5"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="neph">Numéro de dossier (NEPH) *</Label>
+                <Input
+                  id="neph"
+                  value={neph}
+                  onChange={(e) => setNeph(e.target.value.replace(/\s/g, ""))}
+                  placeholder="123456789-123"
+                  inputMode="numeric"
+                  required
+                  className="mt-1.5 font-mono"
                 />
               </div>
               <div>
-                <Label htmlFor="nom">Nom (optionnel)</Label>
-                <Input
-                  id="nom"
-                  value={nom}
-                  onChange={(e) => setNom(e.target.value)}
-                  className="mt-1.5"
-                />
+                <Label htmlFor="groupe">Groupe de permis *</Label>
+                <select
+                  id="groupe"
+                  value={groupe}
+                  onChange={(e) => setGroupe(e.target.value as "A" | "B")}
+                  className="mt-1.5 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="B">Permis B (voiture)</option>
+                  <option value="A">Permis A (moto)</option>
+                </select>
               </div>
+            </div>
+            <div>
+              <Label htmlFor="email">Email (optionnel)</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="eleve@exemple.com"
+                className="mt-1.5"
+              />
             </div>
             <div className="flex gap-2 justify-end">
               <Button type="submit" disabled={submitting}>
@@ -208,12 +225,14 @@ function MandateRow({ request: r, onRetry }: { request: MandateRequest; onRetry:
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">
-          {r.prenom || r.nom ? `${r.prenom ?? ""} ${r.nom ?? ""}`.trim() : "Élève"}
+          {r.prenom ? `${r.prenom} ` : ""}
+          <span className="uppercase">{r.nom}</span>
           <span className="font-mono text-xs text-muted-foreground ml-2">{r.neph}</span>
+          <span className="text-xs text-muted-foreground ml-2">· Permis {r.groupe_permis}</span>
         </p>
         <p className="text-xs text-muted-foreground">
           {pres.label} · {formatRelative(r.created_at)}
-          {r.error_message && <span className="text-destructive"> — {r.error_message.slice(0, 80)}</span>}
+          {r.error_message && <span className="text-destructive"> — {r.error_message.slice(0, 120)}</span>}
         </p>
       </div>
       {r.status === "error" && (
