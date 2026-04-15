@@ -140,6 +140,7 @@ export function StudentAutocomplete({ value, onChange, placeholder = "Rechercher
   // quand la sync désactive/ajoute un élève
   useEffect(() => {
     const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function refetch() {
       const { data } = await supabase
@@ -157,19 +158,23 @@ export function StudentAutocomplete({ value, onChange, placeholder = "Rechercher
       setLoading(false);
     })();
 
+    const scheduleRefetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      // Sync de 675 lignes = ~675 events rafale ; on attend 800ms de calme avant refetch
+      debounceTimer = setTimeout(refetch, 800);
+    };
+
     const ch = supabase
       .channel("students-autocomplete-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rdvpermis_students" },
-        () => {
-          // Debounce léger pour éviter de spam sur sync 675 lignes
-          refetch();
-        },
+        scheduleRefetch,
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(ch);
     };
   }, []);
