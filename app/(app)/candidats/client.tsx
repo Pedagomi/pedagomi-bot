@@ -13,6 +13,7 @@ import {
   CheckCheck,
   RefreshCw,
   Pencil,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -22,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { cn, maskNeph, formatRelative } from "@/lib/utils";
 import { StudentAutocomplete } from "@/components/candidates/student-autocomplete";
 import { AvailabilityWindowsEditor } from "@/components/candidates/availability-windows";
+import { MandateTakerModal } from "@/components/candidates/mandate-modal";
 import type {
   Candidate,
   Centre,
@@ -40,6 +42,7 @@ export function CandidatesClient({ initial, centres }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>(initial);
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [mandateOpen, setMandateOpen] = useState(false);
   const [editing, setEditing] = useState<Candidate | null>(null);
   const [filter, setFilter] = useState<CandidateStatus | "all">("all");
   const [botState, setBotState] = useState<BotState | null>(null);
@@ -150,13 +153,16 @@ export function CandidatesClient({ initial, centres }: Props) {
             Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button onClick={triggerSync} variant="outline" disabled={syncStatus === "syncing"}>
             {syncStatus === "syncing" ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> Synchronisation…</>
             ) : (
               <><RefreshCw className="h-4 w-4" /> Synchroniser RdvPermis</>
             )}
+          </Button>
+          <Button onClick={() => setMandateOpen(true)} variant="outline">
+            <UserPlus className="h-4 w-4" /> Prendre sous mandat
           </Button>
           <Button onClick={() => setFormOpen(true)}>
             <Plus className="h-4 w-4" /> Ajouter un candidat
@@ -233,6 +239,9 @@ export function CandidatesClient({ initial, centres }: Props) {
             candidate={editing}
             onClose={() => setEditing(null)}
           />
+        )}
+        {mandateOpen && (
+          <MandateTakerModal onClose={() => setMandateOpen(false)} />
         )}
       </AnimatePresence>
     </div>

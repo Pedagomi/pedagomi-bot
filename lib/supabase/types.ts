@@ -15,6 +15,24 @@ export interface AvailabilityWindow {
   end: string;   // HH:MM
 }
 
+/** Statut d'une demande de prise sous mandat */
+export type MandateStatus = "pending" | "processing" | "success" | "error";
+
+/** Demande de prise sous mandat (créée via UI, traitée par le worker) */
+export interface MandateRequest {
+  id: string;
+  neph: string;
+  date_naissance: string; // YYYY-MM-DD
+  nom: string | null;
+  prenom: string | null;
+  status: MandateStatus;
+  error_message: string | null;
+  candidat_id_plateforme: string | null;
+  mandat_id: string | null;
+  created_at: string;
+  processed_at: string | null;
+}
+
 /** Etudiant sous mandat (synchronisé depuis RdvPermis) */
 export interface RdvpermisStudent {
   candidat_id_plateforme: string;
