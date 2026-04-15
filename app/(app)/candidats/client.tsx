@@ -12,6 +12,7 @@ import {
   Trash2,
   CheckCheck,
   RefreshCw,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -39,6 +40,7 @@ export function CandidatesClient({ initial, centres }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>(initial);
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Candidate | null>(null);
   const [filter, setFilter] = useState<CandidateStatus | "all">("all");
   const [botState, setBotState] = useState<BotState | null>(null);
 
@@ -212,6 +214,7 @@ export function CandidatesClient({ initial, centres }: Props) {
               centres={centres}
               onDelete={() => removeCandidate(c.id)}
               onMarkServed={() => markAsServed(c.id)}
+              onEdit={() => setEditing(c)}
             />
           ))}
         </div>
@@ -222,6 +225,13 @@ export function CandidatesClient({ initial, centres }: Props) {
           <CandidateFormModal
             centres={centres}
             onClose={() => setFormOpen(false)}
+          />
+        )}
+        {editing && (
+          <CandidateFormModal
+            centres={centres}
+            candidate={editing}
+            onClose={() => setEditing(null)}
           />
         )}
       </AnimatePresence>
@@ -299,11 +309,13 @@ function CandidateRow({
   centres,
   onDelete,
   onMarkServed,
+  onEdit,
 }: {
   candidate: Candidate;
   centres: Centre[];
   onDelete: () => void;
   onMarkServed: () => void;
+  onEdit: () => void;
 }) {
   const pres = statusPresentation(c.status);
   const StatusIcon = pres.icon;
@@ -360,7 +372,10 @@ function CandidateRow({
               Marquer servi
             </Button>
           )}
-          <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Supprimer">
+          <Button size="icon" variant="ghost" onClick={onEdit} aria-label="Modifier" title="Modifier">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Supprimer" title="Supprimer">
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -372,14 +387,44 @@ function CandidateRow({
   );
 }
 
-function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: () => void }) {
-  const [student, setStudent] = useState<RdvpermisStudent | null>(null);
-  const [priorite, setPriorite] = useState(100);
-  const [selectedCentres, setSelectedCentres] = useState<string[]>(centres.map((c) => c.id));
-  const [dateMin, setDateMin] = useState("");
-  const [dateMax, setDateMax] = useState("");
-  const [windows, setWindows] = useState<AvailabilityWindow[]>([]);
-  const [note, setNote] = useState("");
+function CandidateFormModal({
+  centres,
+  onClose,
+  candidate,
+}: {
+  centres: Centre[];
+  onClose: () => void;
+  candidate?: Candidate;
+}) {
+  const isEdit = !!candidate;
+  // En mode édition on n'a pas besoin de re-sélectionner l'élève, on le reconstruit depuis le candidat
+  const [student, setStudent] = useState<RdvpermisStudent | null>(
+    candidate
+      ? {
+          candidat_id_plateforme: candidate.candidat_id_plateforme || "",
+          neph: candidate.neph,
+          nom: candidate.nom,
+          prenom: candidate.prenom,
+          email: candidate.email || "",
+          date_naissance: null,
+          mandat_id: null,
+          groupe_permis: "B",
+          actif: true,
+          first_seen_at: "",
+          last_synced_at: "",
+        }
+      : null,
+  );
+  const [priorite, setPriorite] = useState(candidate?.priorite ?? 100);
+  const [selectedCentres, setSelectedCentres] = useState<string[]>(
+    candidate
+      ? (candidate.centres_acceptes.length ? candidate.centres_acceptes : centres.map((c) => c.id))
+      : centres.map((c) => c.id),
+  );
+  const [dateMin, setDateMin] = useState(candidate?.date_min ?? "");
+  const [dateMax, setDateMax] = useState(candidate?.date_max ?? "");
+  const [windows, setWindows] = useState<AvailabilityWindow[]>(candidate?.availability_windows ?? []);
+  const [note, setNote] = useState(candidate?.note ?? "");
   const [submitting, setSubmitting] = useState(false);
 
   const allChecked = selectedCentres.length === centres.length;
@@ -400,17 +445,37 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
 
     setSubmitting(true);
     const supabase = createClient();
-    const { error } = await supabase.from("candidates").insert({
-      neph: student.neph,
-      nom: student.nom,
-      prenom: student.prenom,
-      email: student.email,
+
+    const payload = {
       priorite,
       centres_acceptes: allChecked ? [] : selectedCentres,
       availability_windows: windows,
       date_min: dateMin || null,
       date_max: dateMax || null,
       note: note.trim(),
+    };
+
+    if (isEdit && candidate) {
+      const { error } = await supabase
+        .from("candidates")
+        .update(payload)
+        .eq("id", candidate.id);
+      setSubmitting(false);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success(`${candidate.prenom} ${candidate.nom} modifié`);
+      onClose();
+      return;
+    }
+
+    const { error } = await supabase.from("candidates").insert({
+      ...payload,
+      neph: student.neph,
+      nom: student.nom,
+      prenom: student.prenom,
+      email: student.email,
       status: "waiting",
       candidat_id_plateforme: student.candidat_id_plateforme,
       rdvpermis_student_id: student.candidat_id_plateforme,
@@ -442,21 +507,34 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
         className="relative w-full max-w-3xl bg-card rounded-2xl border border-border shadow-xl max-h-[calc(100vh-3rem)] overflow-hidden flex flex-col"
       >
         <div className="p-6 border-b border-border/60">
-          <h2 className="text-xl font-bold">Ajouter un candidat à la file d'attente</h2>
+          <h2 className="text-xl font-bold">
+            {isEdit ? "Modifier le candidat" : "Ajouter un candidat à la file d'attente"}
+          </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Sélectionne un élève sous mandat, puis définis ses préférences.
+            {isEdit
+              ? "Mets à jour les centres, dates ou horaires — la modification se synchronise instantanément avec le bot."
+              : "Sélectionne un élève sous mandat, puis définis ses préférences."}
           </p>
         </div>
 
         <form onSubmit={submit} className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-6">
-            <div>
-              <Label className="mb-2 block">Élève *</Label>
-              <StudentAutocomplete value={student} onChange={setStudent} />
-              <p className="text-xs text-muted-foreground mt-1.5">
-                Tape le nom, prénom ou NEPH — la liste affiche tes élèves sous mandat AE2B.
-              </p>
-            </div>
+            {isEdit ? (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="font-semibold">
+                  {student?.prenom} <span className="uppercase">{student?.nom}</span>
+                </p>
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">NEPH {student?.neph}</p>
+              </div>
+            ) : (
+              <div>
+                <Label className="mb-2 block">Élève *</Label>
+                <StudentAutocomplete value={student} onChange={setStudent} />
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Tape le nom, prénom ou NEPH — la liste affiche tes élèves sous mandat AE2B.
+                </p>
+              </div>
+            )}
 
             <div>
               <h3 className="font-semibold text-sm mb-3">Centres d'examen acceptés</h3>
@@ -520,8 +598,14 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
               Annuler
             </Button>
             <Button type="submit" disabled={submitting || !student}>
-              {submitting ? <Loader2 className="animate-spin" /> : <Plus className="h-4 w-4" />}
-              Ajouter à la file
+              {submitting ? (
+                <Loader2 className="animate-spin" />
+              ) : isEdit ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              {isEdit ? "Enregistrer les modifications" : "Ajouter à la file"}
             </Button>
           </div>
         </form>
