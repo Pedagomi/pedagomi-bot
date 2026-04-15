@@ -40,9 +40,17 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
       updates.stop_requested = true;
       updates.status = "stopped";
     }
+
+    // Optimistic update : on reflète le changement immédiatement côté UI
+    // (le worker mettra ~1-3s à confirmer via Realtime)
+    const previous = state;
+    setState((prev) => (prev ? { ...prev, ...updates } as BotState : prev));
+
     const { error } = await supabase.from("bot_state").update(updates).eq("id", 1);
     setBusy(false);
     if (error) {
+      // Rollback si l'update a échoué
+      setState(previous);
       toast.error("Erreur : " + error.message);
       return;
     }
