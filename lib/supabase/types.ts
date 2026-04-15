@@ -16,7 +16,30 @@ export interface AvailabilityWindow {
 }
 
 /** Statut d'une demande de prise sous mandat */
-export type MandateStatus = "pending" | "processing" | "success" | "error";
+export type MandateStatus = "pending" | "processing" | "success" | "error" | "already";
+
+export interface PenaliteRdvPermis {
+  id: string;
+  motif: string;
+  dateExamen: string;
+  dateDeFin: string;
+  groupePermis: string;
+  typeEpreuvePratique: string | null;
+  dureeEnJour: number;
+  statut: string;
+  dateDeLevee: string | null;
+}
+
+export interface DetailResultat {
+  categoriePermis: string;
+  derniereDateExamenTheorique: string | null;
+  derniereDateExamenCirculation: string | null;
+  statutExamenCirculation: string | null;
+  nombreEchecsTotal: number;
+  nombreEchecsCirculation: number;
+  seuilCritiqueNombreEchecsAtteint: boolean;
+  examenJourJ: boolean;
+}
 
 /** Demande de prise sous mandat (créée via UI, traitée par le worker) */
 export interface MandateRequest {
@@ -48,6 +71,15 @@ export interface RdvpermisStudent {
   actif: boolean;
   first_seen_at: string;
   last_synced_at: string;
+  // Détails enrichis
+  penalites: PenaliteRdvPermis[] | null;
+  details_resultats: DetailResultat[] | null;
+  date_examen_theorique: string | null;
+  date_examen_circulation: string | null;
+  statut_examen_circulation: string | null;
+  nombre_echecs_total: number;
+  nombre_echecs_circulation: number;
+  seuil_critique_atteint: boolean;
 }
 
 export interface Centre {

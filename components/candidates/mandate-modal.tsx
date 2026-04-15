@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, UserPlus, CheckCircle2, XCircle, Clock, RotateCw } from "lucide-react";
+import { Loader2, UserPlus, CheckCircle2, XCircle, Clock, RotateCw, Info } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -232,7 +232,11 @@ function MandateRow({ request: r, onRetry }: { request: MandateRequest; onRetry:
         </p>
         <p className="text-xs text-muted-foreground">
           {pres.label} · {formatRelative(r.created_at)}
-          {r.error_message && <span className="text-destructive"> — {r.error_message.slice(0, 120)}</span>}
+          {r.error_message && (
+            <span className={r.status === "already" ? "text-warning" : "text-destructive"}>
+              {" "}— {r.error_message.slice(0, 140)}
+            </span>
+          )}
         </p>
       </div>
       {r.status === "error" && (
@@ -252,6 +256,8 @@ function statusPresentation(status: MandateRequest["status"]) {
       return { icon: Loader2, label: "Traitement en cours…", cls: "bg-primary/10 text-primary animate-pulse" };
     case "success":
       return { icon: CheckCircle2, label: "Pris sous mandat ✓", cls: "bg-success/15 text-success" };
+    case "already":
+      return { icon: Info, label: "Déjà sous mandat", cls: "bg-warning/15 text-warning" };
     case "error":
       return { icon: XCircle, label: "Échec", cls: "bg-destructive/15 text-destructive" };
   }

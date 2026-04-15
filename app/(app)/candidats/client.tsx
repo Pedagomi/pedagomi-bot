@@ -146,28 +146,44 @@ export function CandidatesClient({ initial, centres }: Props) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Candidats en attente</h1>
-          <p className="text-muted-foreground mt-1">
-            Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.
-          </p>
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-end justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Candidats en attente</h1>
+            <p className="text-muted-foreground mt-1">
+              Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={triggerSync} variant="outline" size="sm" disabled={syncStatus === "syncing"}>
+              {syncStatus === "syncing" ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Synchronisation…</>
+              ) : (
+                <><RefreshCw className="h-4 w-4" /> Synchroniser RdvPermis</>
+              )}
+            </Button>
+            <Button onClick={() => setMandateOpen(true)} variant="outline" size="sm">
+              <UserPlus className="h-4 w-4" /> Prendre sous mandat
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button onClick={triggerSync} variant="outline" disabled={syncStatus === "syncing"}>
-            {syncStatus === "syncing" ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Synchronisation…</>
-            ) : (
-              <><RefreshCw className="h-4 w-4" /> Synchroniser RdvPermis</>
-            )}
-          </Button>
-          <Button onClick={() => setMandateOpen(true)} variant="outline">
-            <UserPlus className="h-4 w-4" /> Prendre sous mandat
-          </Button>
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4" /> Ajouter un candidat
-          </Button>
-        </div>
+
+        {/* CTA principale : ajouter un candidat à la file */}
+        <button
+          onClick={() => setFormOpen(true)}
+          className="w-full rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-colors px-5 py-4 flex items-center gap-3 text-left group"
+        >
+          <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground inline-flex items-center justify-center shrink-0">
+            <Plus className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-foreground">Ajouter un candidat à la file</p>
+            <p className="text-xs text-muted-foreground">
+              Sélectionne un élève sous mandat, ses centres, dates et horaires préférés. Le bot s'occupe du reste.
+            </p>
+          </div>
+          <span className="text-primary text-xl opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+        </button>
       </div>
 
       {/* Bandeau état synchronisation */}
