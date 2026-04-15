@@ -136,11 +136,12 @@ export function StudentAutocomplete({ value, onChange, placeholder = "Rechercher
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Charger les étudiants au montage (stockés localement ensuite pour le filtrage rapide)
+  // Charger les étudiants + Realtime subscription pour reflet immédiat
+  // quand la sync désactive/ajoute un élève
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const supabase = createClient();
+    const supabase = createClient();
+
+    async function refetch() {
       const { data } = await supabase
         .from("rdvpermis_students")
         .select("*")
@@ -148,8 +149,29 @@ export function StudentAutocomplete({ value, onChange, placeholder = "Rechercher
         .order("nom")
         .limit(2000);
       setStudents((data as RdvpermisStudent[]) ?? []);
+    }
+
+    (async () => {
+      setLoading(true);
+      await refetch();
       setLoading(false);
     })();
+
+    const ch = supabase
+      .channel("students-autocomplete-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rdvpermis_students" },
+        () => {
+          // Debounce léger pour éviter de spam sur sync 675 lignes
+          refetch();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   // Fermer le dropdown au clic extérieur
