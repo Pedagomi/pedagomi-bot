@@ -6,6 +6,29 @@
 export type CandidateStatus = "waiting" | "reserved" | "served" | "cancelled" | "failed";
 export type BotStatus = "running" | "paused" | "stopped" | "error";
 export type HorairePrefere = "matin" | "apres-midi";
+export type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
+/** Une fenêtre horaire acceptable pour un candidat */
+export interface AvailabilityWindow {
+  day: DayOfWeek;
+  start: string; // HH:MM
+  end: string;   // HH:MM
+}
+
+/** Etudiant sous mandat (synchronisé depuis RdvPermis) */
+export interface RdvpermisStudent {
+  candidat_id_plateforme: string;
+  neph: string;
+  nom: string;
+  prenom: string;
+  email: string;
+  date_naissance: string | null;
+  mandat_id: string | null;
+  groupe_permis: string;
+  actif: boolean;
+  first_seen_at: string;
+  last_synced_at: string;
+}
 
 export interface Centre {
   id: string;
@@ -30,8 +53,10 @@ export interface Candidate {
   date_min: string | null;
   date_max: string | null;
   horaire_prefere: HorairePrefere | null;
+  availability_windows: AvailabilityWindow[];
   status: CandidateStatus;
   candidat_id_plateforme: string | null;
+  rdvpermis_student_id: string | null;
   creneau_id_reserve: string | null;
   creneau_details: string | null;
   note: string;
@@ -76,6 +101,10 @@ export interface BotState {
   current_mission: string | null;
   error_message: string | null;
   stats_today: { scans: number; reservations: number; errors: number };
+  students_sync_requested: boolean;
+  students_last_sync_at: string | null;
+  students_count: number;
+  students_sync_status: "idle" | "syncing" | "error";
   updated_at: string;
 }
 
