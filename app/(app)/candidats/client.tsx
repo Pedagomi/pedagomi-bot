@@ -10,17 +10,25 @@ import {
   Clock,
   XCircle,
   Trash2,
-  Edit3,
   CheckCheck,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { cn, maskNeph, formatRelative } from "@/lib/utils";
-import type { Candidate, Centre, CandidateStatus, HorairePrefere } from "@/lib/supabase/types";
+import { StudentAutocomplete } from "@/components/candidates/student-autocomplete";
+import { AvailabilityWindowsEditor } from "@/components/candidates/availability-windows";
+import type {
+  Candidate,
+  Centre,
+  CandidateStatus,
+  RdvpermisStudent,
+  AvailabilityWindow,
+  BotState,
+} from "@/lib/supabase/types";
 
 interface Props {
   initial: Candidate[];
@@ -32,8 +40,8 @@ export function CandidatesClient({ initial, centres }: Props) {
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [filter, setFilter] = useState<CandidateStatus | "all">("all");
+  const [botState, setBotState] = useState<BotState | null>(null);
 
-  // Realtime sync
   useEffect(() => {
     const supabase = createClient();
     const ch = supabase
@@ -51,8 +59,28 @@ export function CandidatesClient({ initial, centres }: Props) {
         },
       )
       .subscribe();
+
+    // Subscribe to bot_state for sync status
+    const syncCh = supabase
+      .channel("bot-state-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bot_state" },
+        (payload) => setBotState(payload.new as BotState),
+      )
+      .subscribe();
+
+    // Initial fetch of bot_state
+    supabase
+      .from("bot_state")
+      .select("*")
+      .eq("id", 1)
+      .single()
+      .then(({ data }) => data && setBotState(data as BotState));
+
     return () => {
       supabase.removeChannel(ch);
+      supabase.removeChannel(syncCh);
     };
   }, []);
 
@@ -71,15 +99,13 @@ export function CandidatesClient({ initial, centres }: Props) {
     return arr;
   }, [candidates, query, filter]);
 
-  const counts = useMemo(() => {
-    return {
-      all: candidates.length,
-      waiting: candidates.filter((c) => c.status === "waiting").length,
-      reserved: candidates.filter((c) => c.status === "reserved").length,
-      served: candidates.filter((c) => c.status === "served").length,
-      failed: candidates.filter((c) => c.status === "failed").length,
-    };
-  }, [candidates]);
+  const counts = useMemo(() => ({
+    all: candidates.length,
+    waiting: candidates.filter((c) => c.status === "waiting").length,
+    reserved: candidates.filter((c) => c.status === "reserved").length,
+    served: candidates.filter((c) => c.status === "served").length,
+    failed: candidates.filter((c) => c.status === "failed").length,
+  }), [candidates]);
 
   async function removeCandidate(id: string) {
     if (!confirm("Retirer ce candidat de la file ?")) return;
@@ -99,6 +125,20 @@ export function CandidatesClient({ initial, centres }: Props) {
     else toast.success("Marqué comme servi");
   }
 
+  async function triggerSync() {
+    const supabase = createClient();
+    toast.info("Synchronisation lancée, elle apparaît dans quelques secondes…");
+    const { error } = await supabase
+      .from("bot_state")
+      .update({ students_sync_requested: true, students_sync_status: "syncing" })
+      .eq("id", 1);
+    if (error) toast.error(error.message);
+  }
+
+  const syncStatus = botState?.students_sync_status ?? "idle";
+  const studentsCount = botState?.students_count ?? 0;
+  const lastSync = botState?.students_last_sync_at;
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
@@ -108,12 +148,40 @@ export function CandidatesClient({ initial, centres }: Props) {
             Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.
           </p>
         </div>
-        <Button onClick={() => setFormOpen(true)} className="self-start sm:self-auto">
-          <Plus className="h-4 w-4" /> Ajouter un candidat
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={triggerSync} variant="outline" disabled={syncStatus === "syncing"}>
+            {syncStatus === "syncing" ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Synchronisation…</>
+            ) : (
+              <><RefreshCw className="h-4 w-4" /> Synchroniser RdvPermis</>
+            )}
+          </Button>
+          <Button onClick={() => setFormOpen(true)}>
+            <Plus className="h-4 w-4" /> Ajouter un candidat
+          </Button>
+        </div>
       </div>
 
-      {/* Filtres + recherche */}
+      {/* Bandeau état synchronisation */}
+      {(studentsCount > 0 || syncStatus !== "idle") && (
+        <div className="rounded-lg bg-muted/50 border border-border/50 px-4 py-3 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {syncStatus === "syncing" ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            ) : (
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            )}
+            <span>
+              <strong>{studentsCount}</strong> élèves sous mandat synchronisés
+              {lastSync && <> · dernière sync {formatRelative(lastSync)}</>}
+            </span>
+          </div>
+          {syncStatus === "error" && (
+            <span className="text-destructive">Erreur de synchronisation</span>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-2 flex-wrap">
           <FilterPill label="Tous" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
@@ -133,9 +201,8 @@ export function CandidatesClient({ initial, centres }: Props) {
         </div>
       </div>
 
-      {/* Liste */}
       {filtered.length === 0 ? (
-        <EmptyState onCreate={() => setFormOpen(true)} />
+        <EmptyState onCreate={() => setFormOpen(true)} studentsSynced={studentsCount > 0} />
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => (
@@ -150,7 +217,6 @@ export function CandidatesClient({ initial, centres }: Props) {
         </div>
       )}
 
-      {/* Drawer formulaire */}
       <AnimatePresence>
         {formOpen && (
           <CandidateFormModal
@@ -182,7 +248,7 @@ function FilterPill({ label, count, active, onClick }: { label: string; count: n
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate, studentsSynced }: { onCreate: () => void; studentsSynced: boolean }) {
   return (
     <div className="rounded-xl border-2 border-dashed border-border py-16 px-6 text-center">
       <div className="h-14 w-14 mx-auto rounded-full bg-muted flex items-center justify-center mb-4">
@@ -190,7 +256,9 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </div>
       <h3 className="font-semibold">Aucun candidat dans la file</h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Ajoute tes élèves avec leur NEPH et préférences. Le bot réservera automatiquement.
+        {studentsSynced
+          ? "Ajoute tes élèves avec leur NEPH et préférences. Le bot réservera automatiquement."
+          : "Lance d'abord la synchronisation RdvPermis pour récupérer tes élèves sous mandat."}
       </p>
       <Button onClick={onCreate} className="mt-4">
         <Plus className="h-4 w-4" /> Ajouter mon premier candidat
@@ -212,6 +280,18 @@ function statusPresentation(status: CandidateStatus) {
     case "cancelled":
       return { icon: XCircle, label: "Annulé", cls: "text-muted-foreground bg-muted" };
   }
+}
+
+function formatWindowsSummary(windows: AvailabilityWindow[]): string {
+  if (!windows.length) return "Tous horaires";
+  const dayLabels: Record<string, string> = {
+    monday: "Lun", tuesday: "Mar", wednesday: "Mer",
+    thursday: "Jeu", friday: "Ven", saturday: "Sam", sunday: "Dim",
+  };
+  return windows
+    .slice(0, 3)
+    .map((w) => `${dayLabels[w.day] || w.day} ${w.start}-${w.end}`)
+    .join(" · ") + (windows.length > 3 ? ` +${windows.length - 3}` : "");
 }
 
 function CandidateRow({
@@ -265,9 +345,7 @@ function CandidateRow({
             <div className="text-xs text-muted-foreground mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
               <span>🏛 {centreLabels}</span>
               <span>📅 {dateRange}</span>
-              {c.horaire_prefere && (
-                <span>🕐 {c.horaire_prefere === "matin" ? "Matin" : "Après-midi"}</span>
-              )}
+              <span>🕐 {formatWindowsSummary(c.availability_windows || [])}</span>
             </div>
             {c.creneau_details && (
               <p className="text-xs mt-1.5 font-medium text-success">
@@ -295,16 +373,13 @@ function CandidateRow({
 }
 
 function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: () => void }) {
-  const [neph, setNeph] = useState("");
-  const [nom, setNom] = useState("");
-  const [prenom, setPrenom] = useState("");
+  const [student, setStudent] = useState<RdvpermisStudent | null>(null);
   const [priorite, setPriorite] = useState(100);
   const [selectedCentres, setSelectedCentres] = useState<string[]>(centres.map((c) => c.id));
   const [dateMin, setDateMin] = useState("");
   const [dateMax, setDateMax] = useState("");
-  const [horaire, setHoraire] = useState<HorairePrefere | "">("");
+  const [windows, setWindows] = useState<AvailabilityWindow[]>([]);
   const [note, setNote] = useState("");
-  const [nephCheck, setNephCheck] = useState<{ status: "idle" | "loading" | "ok" | "ko"; msg?: string }>({ status: "idle" });
   const [submitting, setSubmitting] = useState(false);
 
   const allChecked = selectedCentres.length === centres.length;
@@ -318,25 +393,27 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const cleanNeph = neph.replace(/\s/g, "");
-    if (!/^\d{10,15}$/.test(cleanNeph)) {
-      toast.error("NEPH invalide (10-15 chiffres)");
+    if (!student) {
+      toast.error("Sélectionne un élève dans la liste");
       return;
     }
 
     setSubmitting(true);
     const supabase = createClient();
     const { error } = await supabase.from("candidates").insert({
-      neph: cleanNeph,
-      nom: nom.trim().toUpperCase(),
-      prenom: prenom.trim(),
+      neph: student.neph,
+      nom: student.nom,
+      prenom: student.prenom,
+      email: student.email,
       priorite,
       centres_acceptes: allChecked ? [] : selectedCentres,
+      availability_windows: windows,
       date_min: dateMin || null,
       date_max: dateMax || null,
-      horaire_prefere: horaire || null,
       note: note.trim(),
       status: "waiting",
+      candidat_id_plateforme: student.candidat_id_plateforme,
+      rdvpermis_student_id: student.candidat_id_plateforme,
     });
 
     setSubmitting(false);
@@ -344,7 +421,7 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
       toast.error(error.message);
       return;
     }
-    toast.success("Candidat ajouté");
+    toast.success(`${student.prenom} ${student.nom} ajouté à la file d'attente`);
     onClose();
   }
 
@@ -362,128 +439,78 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 20 }}
         transition={{ duration: 0.2 }}
-        className="relative w-full max-w-2xl bg-card rounded-2xl border border-border shadow-xl max-h-[calc(100vh-3rem)] overflow-hidden flex flex-col"
+        className="relative w-full max-w-3xl bg-card rounded-2xl border border-border shadow-xl max-h-[calc(100vh-3rem)] overflow-hidden flex flex-col"
       >
         <div className="p-6 border-b border-border/60">
-          <h2 className="text-xl font-bold">Ajouter un candidat</h2>
+          <h2 className="text-xl font-bold">Ajouter un candidat à la file d'attente</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Le bot cherchera une place matchant les préférences dès qu'elles apparaissent.
+            Sélectionne un élève sous mandat, puis définis ses préférences.
           </p>
         </div>
 
         <form onSubmit={submit} className="flex-1 overflow-y-auto">
-          <div className="p-6 space-y-5">
-            {/* Identité */}
+          <div className="p-6 space-y-6">
             <div>
-              <Label htmlFor="neph">Numéro NEPH *</Label>
-              <div className="flex gap-2 mt-1.5">
+              <Label className="mb-2 block">Élève *</Label>
+              <StudentAutocomplete value={student} onChange={setStudent} />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Tape le nom, prénom ou NEPH — la liste affiche tes élèves sous mandat AE2B.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-sm mb-3">Centres d'examen acceptés</h3>
+              <div className="rounded-lg border border-border p-3 max-h-48 overflow-y-auto space-y-0.5">
+                <label className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/10 font-medium border-b border-border pb-2 mb-1">
+                  <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-primary" />
+                  <span>Tous les centres</span>
+                </label>
+                {centres.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/10 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedCentres.includes(c.id)}
+                      onChange={() => toggleCentre(c.id)}
+                      className="accent-primary"
+                    />
+                    <span>{c.nom}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-sm mb-3">Fenêtres horaires acceptées</h3>
+              <AvailabilityWindowsEditor value={windows} onChange={setWindows} />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="date-min">Pas avant le</Label>
+                <Input id="date-min" type="date" value={dateMin} onChange={(e) => setDateMin(e.target.value)} className="mt-1.5" />
+              </div>
+              <div>
+                <Label htmlFor="date-max">Pas après le</Label>
+                <Input id="date-max" type="date" value={dateMax} onChange={(e) => setDateMax(e.target.value)} className="mt-1.5" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="priorite">Priorité (1 = passe en premier)</Label>
                 <Input
-                  id="neph"
-                  placeholder="240575101079"
-                  value={neph}
-                  onChange={(e) => {
-                    setNeph(e.target.value);
-                    setNephCheck({ status: "idle" });
-                  }}
-                  required
-                  className="flex-1"
+                  id="priorite"
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={priorite}
+                  onChange={(e) => setPriorite(parseInt(e.target.value) || 100)}
+                  className="mt-1.5"
                 />
               </div>
-              {nephCheck.status === "ok" && (
-                <p className="text-xs text-success mt-1.5">✓ {nephCheck.msg}</p>
-              )}
-              {nephCheck.status === "ko" && (
-                <p className="text-xs text-destructive mt-1.5">✗ {nephCheck.msg}</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="nom">Nom</Label>
-                <Input id="nom" placeholder="DUPONT" value={nom} onChange={(e) => setNom(e.target.value)} className="mt-1.5" />
-              </div>
-              <div>
-                <Label htmlFor="prenom">Prénom</Label>
-                <Input id="prenom" placeholder="Jean" value={prenom} onChange={(e) => setPrenom(e.target.value)} className="mt-1.5" />
-              </div>
-            </div>
-
-            {/* Préférences */}
-            <div className="pt-2">
-              <h3 className="font-semibold text-sm mb-3">Préférences de réservation</h3>
-
-              <div className="space-y-4">
-                <div>
-                  <Label>Centres acceptés</Label>
-                  <div className="mt-1.5 rounded-lg border border-border p-3 max-h-56 overflow-y-auto space-y-0.5">
-                    <label className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/10 font-medium border-b border-border pb-2 mb-1">
-                      <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-primary" />
-                      <span>Tous les centres</span>
-                    </label>
-                    {centres.map((c) => (
-                      <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/10 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selectedCentres.includes(c.id)}
-                          onChange={() => toggleCentre(c.id)}
-                          className="accent-primary"
-                        />
-                        <span>{c.nom}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="date-min">Pas avant le</Label>
-                    <Input id="date-min" type="date" value={dateMin} onChange={(e) => setDateMin(e.target.value)} className="mt-1.5" />
-                  </div>
-                  <div>
-                    <Label htmlFor="date-max">Pas après le</Label>
-                    <Input id="date-max" type="date" value={dateMax} onChange={(e) => setDateMax(e.target.value)} className="mt-1.5" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="horaire">Horaire préféré</Label>
-                    <select
-                      id="horaire"
-                      value={horaire}
-                      onChange={(e) => setHoraire(e.target.value as HorairePrefere | "")}
-                      className="mt-1.5 flex h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">Peu importe</option>
-                      <option value="matin">Matin (avant 12h)</option>
-                      <option value="apres-midi">Après-midi (12h-18h)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="priorite">Priorité</Label>
-                    <Input
-                      id="priorite"
-                      type="number"
-                      min={1}
-                      max={999}
-                      value={priorite}
-                      onChange={(e) => setPriorite(parseInt(e.target.value) || 100)}
-                      className="mt-1.5"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">1 = passe en premier</p>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="note">Note (optionnel)</Label>
-                  <Input
-                    id="note"
-                    placeholder="Ex: déjà ajourné 2 fois"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    className="mt-1.5"
-                  />
-                </div>
+                <Label htmlFor="note">Note (optionnel)</Label>
+                <Input id="note" placeholder="Ex: urgent, déjà ajourné 2 fois" value={note} onChange={(e) => setNote(e.target.value)} className="mt-1.5" />
               </div>
             </div>
           </div>
@@ -492,7 +519,7 @@ function CandidateFormModal({ centres, onClose }: { centres: Centre[]; onClose: 
             <Button type="button" variant="ghost" onClick={onClose}>
               Annuler
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !student}>
               {submitting ? <Loader2 className="animate-spin" /> : <Plus className="h-4 w-4" />}
               Ajouter à la file
             </Button>

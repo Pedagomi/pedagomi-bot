@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Save, Eye, EyeOff, Lock, Bell, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Loader2, Save, Eye, EyeOff, Lock, Bell, Zap,
+  CheckCircle2, XCircle, RefreshCw, AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { AppSettings } from "@/lib/supabase/types";
+import type { AppSettings, BotState } from "@/lib/supabase/types";
 
 export function SettingsClient({ initial }: { initial: AppSettings | null }) {
   const [settings, setSettings] = useState<Partial<AppSettings>>(
@@ -26,6 +29,43 @@ export function SettingsClient({ initial }: { initial: AppSettings | null }) {
   );
   const [showPass, setShowPass] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [botState, setBotState] = useState<BotState | null>(null);
+
+  // Subscribe to bot_state pour afficher le résultat du test connexion
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("bot_state")
+      .select("*")
+      .eq("id", 1)
+      .single()
+      .then(({ data }) => data && setBotState(data as BotState));
+
+    const ch = supabase
+      .channel("parametres-bot-state")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "bot_state" },
+        (payload) => setBotState(payload.new as BotState),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, []);
+
+  async function testConnection() {
+    const supabase = createClient();
+    toast.info("Test de connexion lancé, résultat dans quelques secondes...");
+    await supabase
+      .from("bot_state")
+      .update({
+        connection_test_requested: true,
+        connection_test_status: "testing",
+        connection_test_message: null,
+      })
+      .eq("id", 1);
+  }
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -94,8 +134,46 @@ export function SettingsClient({ initial }: { initial: AppSettings | null }) {
               </button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Stocké chiffré côté base de données, jamais envoyé au frontend hors de cet écran.
+              Note : le worker réutilise les cookies de ta session Chrome. Ces identifiants
+              servent uniquement si tu veux un login automatique plus tard.
             </p>
+          </div>
+
+          {/* Bouton Test Connexion + résultat */}
+          <div className="pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Tester la connexion</p>
+                <p className="text-xs text-muted-foreground">
+                  Vérifie que les cookies Chrome du worker permettent d'accéder à RdvPermis.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={testConnection}
+                disabled={botState?.connection_test_status === "testing"}
+              >
+                {botState?.connection_test_status === "testing" ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Test en cours…</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4" /> Tester</>
+                )}
+              </Button>
+            </div>
+
+            {botState?.connection_test_status === "ok" && (
+              <div className="mt-3 rounded-lg bg-success/10 border border-success/30 px-3 py-2 text-sm text-success flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>{botState.connection_test_message || "Connexion RdvPermis valide"}</span>
+              </div>
+            )}
+            {botState?.connection_test_status === "ko" && (
+              <div className="mt-3 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+                <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{botState.connection_test_message || "Connexion invalide"}</span>
+              </div>
+            )}
           </div>
         </div>
       </section>
