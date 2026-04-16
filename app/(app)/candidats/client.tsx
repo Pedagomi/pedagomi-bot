@@ -38,6 +38,37 @@ interface Props {
   centres: Centre[];
 }
 
+// Calcule le plancher effectif de date_min : aujourd'hui + 3 jours d'examen (saute le dimanche).
+// Cohérent avec la fonction Postgres public.add_exam_days() utilisée par le job cron quotidien.
+function addExamDays(start: Date, n: number): Date {
+  const d = new Date(start);
+  let added = 0;
+  while (added < n) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0) {
+      // 0 = dimanche → on saute
+      added += 1;
+    }
+  }
+  return d;
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatFrenchDate(iso: string): string {
+  try {
+    const d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
 export function CandidatesClient({ initial, centres }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>(initial);
   const [query, setQuery] = useState("");
@@ -452,6 +483,10 @@ function CandidateFormModal({
   const [note, setNote] = useState(candidate?.note ?? "");
   const [submitting, setSubmitting] = useState(false);
 
+  // Plancher effectif du date_min (aujourd'hui + 3 jours ouvrables, saute le dimanche).
+  // Recalculé à chaque ouverture du modal pour rester aligné avec le cron Supabase.
+  const minEffectiveIso = useMemo(() => toIsoDate(addExamDays(new Date(), 3)), []);
+
   const allChecked = selectedCentres.length === centres.length;
 
   function toggleCentre(id: string) {
@@ -590,11 +625,24 @@ function CandidateFormModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="date-min">Pas avant le</Label>
-                <Input id="date-min" type="date" value={dateMin} onChange={(e) => setDateMin(e.target.value)} className="mt-1.5" />
+                <Input
+                  id="date-min"
+                  type="date"
+                  min={minEffectiveIso}
+                  value={dateMin}
+                  onChange={(e) => setDateMin(e.target.value)}
+                  className="mt-1.5"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Plancher auto : <strong>{formatFrenchDate(minEffectiveIso)}</strong> (+3 jours ouvrables, ajusté chaque nuit)
+                </p>
               </div>
               <div>
                 <Label htmlFor="date-max">Pas après le</Label>
                 <Input id="date-max" type="date" value={dateMax} onChange={(e) => setDateMax(e.target.value)} className="mt-1.5" />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Non ajusté automatiquement (à modifier manuellement si besoin)
+                </p>
               </div>
             </div>
 
