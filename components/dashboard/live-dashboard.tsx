@@ -20,10 +20,11 @@ export function LiveDashboard({ initialState, initialCandidates, initialReservat
   const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
   const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
 
-  // Realtime : candidates
+  // Realtime + polling de secours (5s) pour candidates, reservations, bot_state
   useEffect(() => {
     const supabase = createClient();
-    const ch = supabase
+
+    const chCandidates = supabase
       .channel("dashboard-candidates")
       .on(
         "postgres_changes",
@@ -34,15 +35,8 @@ export function LiveDashboard({ initialState, initialCandidates, initialReservat
         },
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, []);
 
-  // Realtime : reservations
-  useEffect(() => {
-    const supabase = createClient();
-    const ch = supabase
+    const chReservations = supabase
       .channel("dashboard-reservations")
       .on(
         "postgres_changes",
@@ -57,15 +51,8 @@ export function LiveDashboard({ initialState, initialCandidates, initialReservat
         },
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, []);
 
-  // Realtime : bot_state (pour stats_today, heartbeat)
-  useEffect(() => {
-    const supabase = createClient();
-    const ch = supabase
+    const chState = supabase
       .channel("dashboard-bot-state")
       .on(
         "postgres_changes",
@@ -73,8 +60,24 @@ export function LiveDashboard({ initialState, initialCandidates, initialReservat
         (payload) => setState(payload.new as BotState),
       )
       .subscribe();
+
+    // Polling de secours toutes les 5s
+    const poll = setInterval(async () => {
+      const [{ data: cData }, { data: rData }, { data: sData }] = await Promise.all([
+        supabase.from("candidates").select("*"),
+        supabase.from("reservations").select("*").order("reserved_at", { ascending: false }).limit(8),
+        supabase.from("bot_state").select("*").eq("id", 1).single(),
+      ]);
+      if (cData) setCandidates(cData as Candidate[]);
+      if (rData) setReservations(rData as Reservation[]);
+      if (sData) setState(sData as BotState);
+    }, 5000);
+
     return () => {
-      supabase.removeChannel(ch);
+      clearInterval(poll);
+      supabase.removeChannel(chCandidates);
+      supabase.removeChannel(chReservations);
+      supabase.removeChannel(chState);
     };
   }, []);
 

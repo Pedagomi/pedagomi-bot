@@ -37,7 +37,15 @@ export function ErrorBanner() {
         },
       )
       .subscribe();
+
+    // Polling de secours toutes les 5s
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from("bot_state").select("*").eq("id", 1).single();
+      if (data) setState(data as BotState);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
     };
   }, []);

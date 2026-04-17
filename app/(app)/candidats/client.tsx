@@ -114,7 +114,20 @@ export function CandidatesClient({ initial, centres }: Props) {
       .single()
       .then(({ data }) => data && setBotState(data as BotState));
 
+    // Polling de secours toutes les 5s (rattrape les events Realtime ratés)
+    const poll = setInterval(async () => {
+      const { data: cData } = await supabase
+        .from("candidates")
+        .select("*")
+        .order("priorite")
+        .order("created_at");
+      if (cData) setCandidates(cData as Candidate[]);
+      const { data: bData } = await supabase.from("bot_state").select("*").eq("id", 1).single();
+      if (bData) setBotState(bData as BotState);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
       supabase.removeChannel(syncCh);
     };

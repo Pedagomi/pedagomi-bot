@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Activity, Pause, Play, Square, AlertTriangle, Power } from "lucide-react";
+import { Activity, Pause, Play, Square, AlertTriangle, Power, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -13,7 +13,7 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
   const [state, setState] = useState<BotState | null>(initial);
   const [busy, setBusy] = useState(false);
 
-  // Realtime sync de l'état du bot
+  // Realtime sync de l'état du bot + polling de secours toutes les 5s
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -25,12 +25,18 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
       )
       .subscribe();
 
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from("bot_state").select("*").eq("id", 1).single();
+      if (data) setState(data as BotState);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(channel);
     };
   }, []);
 
-  async function sendAction(action: "pause" | "resume" | "stop") {
+  async function sendAction(action: "pause" | "resume" | "stop" | "restart") {
     setBusy(true);
     const supabase = createClient();
     const updates: Partial<BotState> = {};
@@ -39,6 +45,9 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
     if (action === "stop") {
       updates.stop_requested = true;
       updates.status = "stopped";
+    }
+    if (action === "restart") {
+      updates.restart_requested = true;
     }
 
     // Optimistic update : on reflète le changement immédiatement côté UI
@@ -54,9 +63,13 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
       toast.error("Erreur : " + error.message);
       return;
     }
-    toast.success(
-      action === "pause" ? "Bot en pause" : action === "resume" ? "Bot redémarré" : "Bot arrêté",
-    );
+    const messages = {
+      pause: "Bot en pause",
+      resume: "Bot redémarré",
+      stop: "Bot arrêté",
+      restart: "Redémarrage demandé — le worker va se relancer dans quelques secondes",
+    };
+    toast.success(messages[action]);
   }
 
   const status = state?.status ?? "stopped";
@@ -119,6 +132,9 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
               <Pause className="h-4 w-4" /> Pause
             </Button>
           )}
+          <Button onClick={() => sendAction("restart")} disabled={busy} variant="outline" title="Redémarre le worker (utile après une mise à jour du code)">
+            <RotateCw className="h-4 w-4" /> Redémarrer
+          </Button>
           <Button onClick={() => sendAction("stop")} disabled={busy || status === "stopped"} variant="destructive">
             <Power className="h-4 w-4" /> Stop
           </Button>

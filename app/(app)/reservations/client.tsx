@@ -27,7 +27,17 @@ export function ReservationsClient({ initial }: { initial: Reservation[] }) {
         },
       )
       .subscribe();
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from("reservations")
+        .select("*")
+        .order("reserved_at", { ascending: false })
+        .limit(200);
+      if (data) setReservations(data as Reservation[]);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
     };
   }, []);

@@ -150,6 +150,7 @@ export interface BotState {
   last_scan_details: string | null;
   next_scan_at: string | null;
   stop_requested: boolean;
+  restart_requested: boolean;
   current_mission: string | null;
   error_message: string | null;
   stats_today: { scans: number; reservations: number; errors: number };

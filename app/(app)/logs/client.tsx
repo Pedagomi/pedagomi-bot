@@ -26,20 +26,39 @@ export function LogsClient({ initial }: { initial: BotLog[] }) {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Supabase Realtime — ajoute les nouveaux logs en haut
+  // + polling de secours toutes les 5s pour rattraper les events ratés
   useEffect(() => {
     if (!autoRefresh) return;
     const supabase = createClient();
+
+    // Realtime : réception instantanée des nouveaux logs
     const ch = supabase
       .channel("bot-logs-live")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "bot_logs" },
         (payload) => {
-          setLogs((prev) => [payload.new as BotLog, ...prev].slice(0, 500));
+          setLogs((prev) => {
+            // Déduplique (si le polling a déjà récupéré ce log)
+            if (prev.some((l) => l.id === (payload.new as BotLog).id)) return prev;
+            return [payload.new as BotLog, ...prev].slice(0, 500);
+          });
         },
       )
       .subscribe();
+
+    // Polling : rattrapage toutes les 5 secondes
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from("bot_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (data) setLogs(data as BotLog[]);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
     };
   }, [autoRefresh]);

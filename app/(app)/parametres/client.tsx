@@ -32,6 +32,7 @@ export function SettingsClient({ initial }: { initial: AppSettings | null }) {
   const [botState, setBotState] = useState<BotState | null>(null);
 
   // Subscribe to bot_state pour afficher le résultat du test connexion
+  // + polling de secours toutes les 5s
   useEffect(() => {
     const supabase = createClient();
     supabase
@@ -49,7 +50,14 @@ export function SettingsClient({ initial }: { initial: AppSettings | null }) {
         (payload) => setBotState(payload.new as BotState),
       )
       .subscribe();
+
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from("bot_state").select("*").eq("id", 1).single();
+      if (data) setBotState(data as BotState);
+    }, 5000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
     };
   }, []);
