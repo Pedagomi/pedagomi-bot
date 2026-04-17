@@ -52,22 +52,35 @@ echo ""
 # Ajouter tous les fichiers
 git add -A
 
+# Fetch pour savoir où en est le remote (sans modifier l'historique local)
+git fetch origin main --quiet 2>/dev/null || true
+
+# Compter les commits locaux non encore pushés
+AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+
 # Vérifier si il y a des changements à commit
 if git diff --cached --quiet; then
-    echo "ℹ️  Aucune modification locale à pousser."
+    # Pas de nouveau fichier à commit. Mais y a-t-il des commits locaux déjà faits à pousser ?
+    if [ "$AHEAD" -eq 0 ]; then
+        echo "ℹ️  Aucune modification locale à pousser."
+        echo ""
+        echo "Si tu veux quand même forcer une synchro depuis GitHub :"
+        echo "  git pull origin main"
+        echo ""
+        read -p "Appuyez sur Entrée pour fermer..."
+        exit 0
+    else
+        echo "📦 $AHEAD commit(s) déjà créé(s) localement, prêt(s) à être poussé(s) :"
+        git log --oneline origin/main..HEAD
+        echo ""
+    fi
+else
+    # Commit des nouvelles modifs
+    MSG="Update frontend — $(date +%Y-%m-%d\ %H:%M)"
+    git commit -q -m "$MSG"
+    echo "✅ Commit local créé : $MSG"
     echo ""
-    echo "Si tu veux quand même forcer une synchro depuis GitHub :"
-    echo "  git pull origin main"
-    echo ""
-    read -p "Appuyez sur Entrée pour fermer..."
-    exit 0
 fi
-
-# Commit
-MSG="Update frontend — $(date +%Y-%m-%d\ %H:%M)"
-git commit -q -m "$MSG"
-echo "✅ Commit local créé : $MSG"
-echo ""
 
 # Fetch + rebase avant de push (au cas où le remote a avancé)
 echo "🔄 Synchronisation avec GitHub..."
