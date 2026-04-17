@@ -4,6 +4,12 @@
  */
 
 export type CandidateStatus = "waiting" | "reserved" | "served" | "cancelled" | "failed";
+/**
+ * Type de liste d'attente du candidat :
+ * - `place_sup` : élève qui attend une place d'examen qui se libère (annulation, "place sup")
+ * - `examen_prefecture` : élève prêt qui attend sa date officielle attribuée par la préfecture
+ */
+export type CandidateType = "place_sup" | "examen_prefecture";
 export type BotStatus = "running" | "paused" | "stopped" | "error";
 export type HorairePrefere = "matin" | "apres-midi";
 export type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
@@ -107,6 +113,7 @@ export interface Candidate {
   horaire_prefere: HorairePrefere | null;
   availability_windows: AvailabilityWindow[];
   status: CandidateStatus;
+  type: CandidateType;
   candidat_id_plateforme: string | null;
   rdvpermis_student_id: string | null;
   creneau_id_reserve: string | null;

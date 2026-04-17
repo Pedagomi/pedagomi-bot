@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Calendar, Settings, ScrollText } from "lucide-react";
+import { LayoutDashboard, Users, UserCheck, Calendar, Settings, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/candidats", label: "Candidats", icon: Users },
+  { href: "/candidats", label: "Place sup", icon: Users },
+  { href: "/candidats-prets-pour-examen", label: "En attente", icon: UserCheck },
   { href: "/reservations", label: "Resa.", icon: Calendar },
   { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/parametres", label: "Réglages", icon: Settings },
@@ -17,9 +18,12 @@ export function MobileNav() {
   const pathname = usePathname();
   return (
     <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card/90 backdrop-blur border-t border-border/60 pb-safe">
-      <div className="grid grid-cols-5 gap-1 px-2 pt-2 pb-2">
+      <div className="grid grid-cols-6 gap-0.5 px-1 pt-2 pb-2">
         {NAV.map((item) => {
-          const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+          // Match exact ou préfixe + "/" pour éviter que /candidats matche /candidats-prets-pour-examen
+          const active =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(item.href + "/"));
           return (
             <Link
               key={item.href}

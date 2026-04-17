@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Calendar, Settings, LogOut, ScrollText } from "lucide-react";
+import { LayoutDashboard, Users, UserCheck, Calendar, Settings, LogOut, ScrollText } from "lucide-react";
 import { motion } from "framer-motion";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/candidats", label: "Candidats", icon: Users },
+  { href: "/candidats", label: "Place sup", icon: Users },
+  { href: "/candidats-prets-pour-examen", label: "Candidats en attente", icon: UserCheck },
   { href: "/reservations", label: "Réservations", icon: Calendar },
   { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/parametres", label: "Paramètres", icon: Settings },
@@ -45,7 +46,10 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
 
       <nav className="flex-1 px-3 py-4 space-y-1">
         {NAV.map((item) => {
-          const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+          // Match exact ou préfixe + "/" pour éviter que /candidats matche /candidats-prets-pour-examen
+          const active =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(item.href + "/"));
           return (
             <Link key={item.href} href={item.href}>
               <motion.div

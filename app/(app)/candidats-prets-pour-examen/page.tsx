@@ -1,18 +1,22 @@
 import { createClient } from "@/lib/supabase/server";
-import { CandidatesClient } from "./client";
+import { CandidatesClient } from "../candidats/client";
 import type { Candidate, Centre } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function CandidatesPage() {
+/**
+ * Liste "Candidats en attente" (type = examen_prefecture) :
+ * candidats prêts à passer l'examen, qui attendent leur date officielle
+ * attribuée par la préfecture. Même UI que "Place sup", filtrée par type.
+ */
+export default async function CandidatsPretsPage() {
   const supabase = await createClient();
 
-  // Liste "Place sup" : candidats qui attendent qu'une place d'examen se libère (annulation).
   const [candidatesRes, centresRes] = await Promise.all([
     supabase
       .from("candidates")
       .select("*")
-      .eq("type", "place_sup")
+      .eq("type", "examen_prefecture")
       .order("priorite", { ascending: true })
       .order("created_at", { ascending: true }),
     supabase.from("centres").select("*").eq("actif", true).order("ordre"),
@@ -25,9 +29,9 @@ export default async function CandidatesPage() {
     <CandidatesClient
       initial={candidates}
       centres={centres}
-      listType="place_sup"
-      title="Place sup"
-      description="Candidats qui attendent qu'une place d'examen se libère. Le bot réserve automatiquement dès qu'une place matche leurs préférences."
+      listType="examen_prefecture"
+      title="Candidats en attente"
+      description="Candidats prêts à passer leur examen, qui attendent la date officielle attribuée par la préfecture. Le bot réserve automatiquement dès qu'une place se libère dans leurs dates cibles."
     />
   );
 }

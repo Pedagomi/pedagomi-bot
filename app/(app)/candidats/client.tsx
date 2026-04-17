@@ -28,6 +28,7 @@ import type {
   Candidate,
   Centre,
   CandidateStatus,
+  CandidateType,
   RdvpermisStudent,
   AvailabilityWindow,
   BotState,
@@ -36,6 +37,17 @@ import type {
 interface Props {
   initial: Candidate[];
   centres: Centre[];
+  /**
+   * Type de liste affichée :
+   *   - "place_sup" : candidats en attente d'une place qui se libère (page "/candidats")
+   *   - "examen_prefecture" : candidats prêts qui attendent leur date officielle (page "/candidats-prets-pour-examen")
+   * Par défaut "place_sup" pour rester rétrocompatible avec les anciens appels.
+   */
+  listType?: CandidateType;
+  /** Titre affiché en haut de la page. Par défaut "Place sup". */
+  title?: string;
+  /** Sous-titre explicatif sous le titre. */
+  description?: string;
 }
 
 // Calcule le plancher effectif de date_min : aujourd'hui + 3 jours d'examen (saute le dimanche).
@@ -69,7 +81,13 @@ function formatFrenchDate(iso: string): string {
   }
 }
 
-export function CandidatesClient({ initial, centres }: Props) {
+export function CandidatesClient({
+  initial,
+  centres,
+  listType = "place_sup",
+  title = "Place sup",
+  description = "Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.",
+}: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>(initial);
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -80,8 +98,10 @@ export function CandidatesClient({ initial, centres }: Props) {
 
   useEffect(() => {
     const supabase = createClient();
+    // Le canal Realtime est isolé par `listType` pour que chaque page
+    // (place_sup / examen_prefecture) gère son propre abonnement sans se marcher dessus.
     const ch = supabase
-      .channel("candidates-live")
+      .channel(`candidates-live-${listType}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "candidates" },
@@ -89,6 +109,7 @@ export function CandidatesClient({ initial, centres }: Props) {
           const { data } = await supabase
             .from("candidates")
             .select("*")
+            .eq("type", listType)
             .order("priorite")
             .order("created_at");
           if (data) setCandidates(data as Candidate[]);
@@ -98,7 +119,7 @@ export function CandidatesClient({ initial, centres }: Props) {
 
     // Subscribe to bot_state for sync status
     const syncCh = supabase
-      .channel("bot-state-sync")
+      .channel(`bot-state-sync-${listType}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bot_state" },
@@ -119,6 +140,7 @@ export function CandidatesClient({ initial, centres }: Props) {
       const { data: cData } = await supabase
         .from("candidates")
         .select("*")
+        .eq("type", listType)
         .order("priorite")
         .order("created_at");
       if (cData) setCandidates(cData as Candidate[]);
@@ -131,7 +153,7 @@ export function CandidatesClient({ initial, centres }: Props) {
       supabase.removeChannel(ch);
       supabase.removeChannel(syncCh);
     };
-  }, []);
+  }, [listType]);
 
   const filtered = useMemo(() => {
     let arr = candidates;
@@ -193,10 +215,8 @@ export function CandidatesClient({ initial, centres }: Props) {
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3 sm:items-end justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Candidats en attente</h1>
-            <p className="text-muted-foreground mt-1">
-              Le bot attribue les places au candidat le plus prioritaire dont les préférences matchent.
-            </p>
+            <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+            <p className="text-muted-foreground mt-1">{description}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button onClick={triggerSync} variant="outline" size="sm" disabled={syncStatus === "syncing"}>
@@ -290,12 +310,14 @@ export function CandidatesClient({ initial, centres }: Props) {
         {formOpen && (
           <CandidateFormModal
             centres={centres}
+            listType={listType}
             onClose={() => setFormOpen(false)}
           />
         )}
         {editing && (
           <CandidateFormModal
             centres={centres}
+            listType={listType}
             candidate={editing}
             onClose={() => setEditing(null)}
           />
@@ -460,10 +482,12 @@ function CandidateFormModal({
   centres,
   onClose,
   candidate,
+  listType,
 }: {
   centres: Centre[];
   onClose: () => void;
   candidate?: Candidate;
+  listType: CandidateType;
 }) {
   const isEdit = !!candidate;
   // En mode édition on n'a pas besoin de re-sélectionner l'élève, on le reconstruit depuis le candidat
@@ -481,6 +505,15 @@ function CandidateFormModal({
           actif: true,
           first_seen_at: "",
           last_synced_at: "",
+          // Champs enrichis (non connus en mode édition) — défauts safe
+          penalites: null,
+          details_resultats: null,
+          date_examen_theorique: null,
+          date_examen_circulation: null,
+          statut_examen_circulation: null,
+          nombre_echecs_total: 0,
+          nombre_echecs_circulation: 0,
+          seuil_critique_atteint: false,
         }
       : null,
   );
@@ -550,6 +583,7 @@ function CandidateFormModal({
       prenom: student.prenom,
       email: student.email,
       status: "waiting",
+      type: listType,
       candidat_id_plateforme: student.candidat_id_plateforme,
       rdvpermis_student_id: student.candidat_id_plateforme,
     });
