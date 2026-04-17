@@ -37,6 +37,20 @@ export function BotStatusCard({ initial }: { initial: BotState | null }) {
   }, []);
 
   async function sendAction(action: "pause" | "resume" | "stop" | "restart") {
+    // Confirmation pour les actions qui coupent le worker (évite un clic accidentel)
+    if (action === "restart") {
+      const ok = window.confirm(
+        "Redémarrer le worker ?\n\nLe bot va s'arrêter quelques secondes puis relancer. Toute réservation en cours sera interrompue.",
+      );
+      if (!ok) return;
+    }
+    if (action === "stop") {
+      const ok = window.confirm(
+        "Arrêter le bot ?\n\nIl ne scannera plus de places tant que tu ne le redémarres pas manuellement.",
+      );
+      if (!ok) return;
+    }
+
     setBusy(true);
     const supabase = createClient();
     const updates: Partial<BotState> = {};
